@@ -141,36 +141,17 @@ def process():
         #: Use the various palletjack classes and other code to do your work here
         #########################################################################
         import pandas as pd
+        import numpy as np
 
         #: Read data from Google Sheet
         module_logger.info('Reading in DABS data from Google Sheet ...')
         loader = GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
         dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 'TEST_TAB', by_title=True)
         
-        #: Geocode rows if ACTION.casefold() == 'add', else but them into the removes dataframe
-        module_logger.info('Geocoding new rows ...')
+        #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
         adds_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'add']
         adds_df.drop(['ACTION'], axis='columns', inplace=True)
         removes_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'remove']
-
-        geocoder = APIGeocoder(secrets.GEOCODE_KEY)
-        geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
-        valid = geo_df.spatial.validate()
-        print(f'Is geo_df spatial?: {valid}')
-        # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
-
-        #: Add rows to AGOL layer (include bad geocodes for now, then manually edit them)
-        columns = ['Lic_Number', 'Name', 'Address', 'City', 'Zip', 'SHAPE']
-        geo_df_to_add = geo_df[columns]
-
-        # UPSERT METHOD
-        # # module_logger.info(f'Current geocoded dataframe CRS: {geo_df.crs} ...')
-        # module_logger.info(f'geo_df data type: {type(geo_df)} ...')
-        # module_logger.info(f'geo_df_to_add data type: {type(geo_df_to_add)} ...')
-        # # geo_df_to_add = geo_df_to_add.set_crs(3857, allow_override=True)
-        # module_logger.info('Adding new rows to feature service ...')
-        # updater = FeatureServiceInlineUpdater(gis, geo_df_to_add, config.JOIN_COLUMN, field_mapping=None)
-        # updater.upsert_new_data_in_hosted_feature_layer(config.FEATURE_LAYER_ITEMID, layer_index=0)
 
         #: OVERWRITE/TRUNCATE AND LOAD METHOD
         #: Pull down original data and copy to working dataframe
@@ -192,13 +173,64 @@ def process():
         after_count = len(working_dataframe.index)
         change = before_count - after_count
         module_logger.info(f'Removed {change} rows from working dataframe ...')
+        
+        #: Geocode rows if ACTION.casefold() == 'add', else put them into the removes dataframe
+        if len(adds_df.index) > 0:
+            module_logger.info('Geocoding new rows ...')
+            geocoder = APIGeocoder(secrets.GEOCODE_KEY)
+            geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
+            valid = geo_df.spatial.validate()
+            print(f'Is geo_df spatial?: {valid}')
+            # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
 
-        #: Combine working dataframe with geocoded dataframe
-        combined_dataframe = pd.concat([working_dataframe, geo_df])
+            #: Add rows to AGOL layer (include bad geocodes for now, then manually edit them)
+            columns = ['Lic_Number', 'Name', 'Address', 'City', 'Zip', 'SHAPE']
+            geo_df_to_add = geo_df[columns]
 
+            #: Calculate appropriate OIDs on the geocoded dataframe (use original_dataframe to be safe)
+            # max_OID = original_dataframe['OBJECTID'].max()
+            # geo_df_to_add.insert(0, 'OBJECTID', range(max_OID + 1, max_OID + len(geo_df_to_add) + 1))
+
+            #: Combine working dataframe with geocoded dataframe
+            combined_dataframe = pd.concat([working_dataframe, geo_df_to_add])
+
+            #: Convert NaNs to 0s and make dtype 'int' on Comp_Zone
+            combined_dataframe['Comp_Zone'].fillna(0, inplace=True)
+            combined_dataframe['Comp_Zone'] = combined_dataframe['Comp_Zone'].astype('int')
+
+            #: Convert NaNs to 0s for double fields (Point_X and Point_Y)
+            combined_dataframe['Point_X'].fillna(0, inplace=True)
+            combined_dataframe['Point_Y'].fillna(0, inplace=True)
+
+            #: Convert remaining NaNs to empty strings in string fields (County, Suite_Unit, Lic_Type, Lic_Descr, Renew_Date, Lic_Group, Comp_Group, Comp_Needed,  )
+            combined_dataframe = combined_dataframe.replace(np.nan, '', regex=True)
+
+            #: Deduplicate Lic_Number field
+            module_logger.info(f'Combined dataframe has {len(combined_dataframe.index)} rows ...')
+            lic_nums = combined_dataframe['Lic_Number']
+            dupes = combined_dataframe[lic_nums.isin(lic_nums[lic_nums.duplicated()])].sort_values("Lic_Number")
+            # module_logger.info(dupes.head(10))
+            if len(dupes.index) > 0:
+                module_logger.info(f'Found {len(dupes.index)} duplicates in newly combined data, dropping all but last occurrences ...')
+                combined_dataframe.drop_duplicates('Lic_Number', keep='last', inplace=True)
+                module_logger.info(f'Combined dataframe now has {len(combined_dataframe.index)} rows ...')
+        else:
+            module_logger.info('No new rows to geocode ...')
+            combined_dataframe = working_dataframe
+
+        # UPSERT METHOD
+        # # module_logger.info(f'Current geocoded dataframe CRS: {geo_df.crs} ...')
+        # module_logger.info(f'geo_df data type: {type(geo_df)} ...')
+        # module_logger.info(f'geo_df_to_add data type: {type(geo_df_to_add)} ...')
+        # # geo_df_to_add = geo_df_to_add.set_crs(3857, allow_override=True)
+        # module_logger.info('Adding new rows to feature service ...')
+        # updater = FeatureServiceInlineUpdater(gis, geo_df_to_add, config.JOIN_COLUMN, field_mapping=None)
+        # updater.upsert_new_data_in_hosted_feature_layer(config.FEATURE_LAYER_ITEMID, layer_index=0)
+
+
+        
         #: Backup data and overwrite existing feature service
         fail_dir = r'C:\Temp'
-
         overwriter = FeatureServiceOverwriter(gis)
         overwriter.truncate_and_load_feature_service(config.FEATURE_LAYER_ITEMID, combined_dataframe, fail_dir, layer_index=0)
 
