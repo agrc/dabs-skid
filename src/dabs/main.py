@@ -218,45 +218,12 @@ def process():
             module_logger.info('No new rows to geocode ...')
             combined_dataframe = working_dataframe
 
-        # UPSERT METHOD
-        # # module_logger.info(f'Current geocoded dataframe CRS: {geo_df.crs} ...')
-        # module_logger.info(f'geo_df data type: {type(geo_df)} ...')
-        # module_logger.info(f'geo_df_to_add data type: {type(geo_df_to_add)} ...')
-        # # geo_df_to_add = geo_df_to_add.set_crs(3857, allow_override=True)
-        # module_logger.info('Adding new rows to feature service ...')
-        # updater = FeatureServiceInlineUpdater(gis, geo_df_to_add, config.JOIN_COLUMN, field_mapping=None)
-        # updater.upsert_new_data_in_hosted_feature_layer(config.FEATURE_LAYER_ITEMID, layer_index=0)
-
-
         
         #: Backup data and overwrite existing feature service
         fail_dir = r'C:\Temp'
         overwriter = FeatureServiceOverwriter(gis)
         overwriter.truncate_and_load_feature_service(config.FEATURE_LAYER_ITEMID, combined_dataframe, fail_dir, layer_index=0)
-
-
-        # #: Delete row if ACTION.casefold() == 'remove'
-        # module_logger.info('Deleting removed rows from feature service ...')
-        # #: Pull down live data
-        # feature_layer_item = gis.content.get(config.FEATURE_LAYER_ITEMID)
-        # feature_layer = arcgis.features.FeatureLayer.fromitem(feature_layer_item)
-        # featureset = feature_layer.query()
-        # live_dataframe = featureset.sdf
-
-        #: Get list of OIDs to delete from live data
-        # inner = live_dataframe.set_index('Lic_Number').join(removes_df, on='Lic_Number', how='inner', lsuffix='live', rsuffix='removes', sort=False, validate=None)
-        # remove_licenses = removes_df['Lic_Number'].tolist()
-        # live_to_remove = live_dataframe[live_dataframe['Lic_Number'].isin(remove_licenses)]
-        # oid_list = live_to_remove['OBJECTID'].tolist()
-        
-        # #: Delete features from feature layer
-        # if len(oid_list) > 0:
-        #     oid_string = ",".join([str(oid) for oid in oid_list])
-        #     deleted = feature_layer.delete_features(deletes=oid_string)
-        #     module_logger.info(f'Deleted features: \n {deleted}')
-        # else:
-        #     module_logger.info('No existing features to delete ...')
-            
+           
         
         end = datetime.now()
 
