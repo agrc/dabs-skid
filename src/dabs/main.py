@@ -187,7 +187,7 @@ def process():
             # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
 
             #: Add rows to AGOL layer (include bad geocodes for now, then manually edit them)
-            columns = ['Lic_Number', 'Name', 'Address', 'City', 'Zip', 'SHAPE']
+            columns = ['Lic_Number', 'Name', 'Address', 'Lic_Address', 'City', 'Zip', 'SHAPE']
             geo_df_to_add = geo_df[columns]
 
             #: Calculate appropriate OIDs on the geocoded dataframe (use original_dataframe to be safe)
@@ -204,8 +204,9 @@ def process():
             #: Convert NaNs to 0s for double fields (Point_X and Point_Y)
             combined_dataframe['Point_X'].fillna(0, inplace=True)
             combined_dataframe['Point_Y'].fillna(0, inplace=True)
+            combined_dataframe['Addr_Dist'].fillna(0, inplace=True)
 
-            #: Convert remaining NaNs to empty strings in string fields (County, Suite_Unit, Lic_Type, Lic_Descr, Renew_Date, Lic_Group, Comp_Group, Comp_Needed,  )
+            #: Convert remaining NaNs to empty strings in string fields (County, Suite_Unit, Lic_Type, Lic_Descr, Renew_Date, Lic_Group, Comp_Group, Comp_Needed, Flag)
             combined_dataframe = combined_dataframe.replace(np.nan, '', regex=True)
 
             #: Deduplicate Lic_Number field
