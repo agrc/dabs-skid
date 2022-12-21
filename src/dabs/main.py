@@ -142,11 +142,14 @@ def process():
         #########################################################################
         import pandas as pd
         import numpy as np
+        import time
 
         #: Read data from Google Sheet
         module_logger.info('Reading in DABS data from Google Sheet ...')
         loader = GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
-        dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, 'TEST_TAB', by_title=True)
+        month_tab = time.strftime("%m/%Y")
+        # month_tab = '11/2022'
+        dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f'{month_tab}', by_title=True)
         
         #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
         adds_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'add']
