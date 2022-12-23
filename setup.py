@@ -11,17 +11,17 @@ from setuptools import find_packages, setup
 
 #: Load version from source file
 version = {}
-with open('src/skidname/version.py') as fp:
+with open('src/dabs/version.py') as fp:
     exec(fp.read(), version)
 
 setup(
-    name='skidname',
+    name='dabs',
     version=version['__version__'],
     license='MIT',
-    description='Update the PROJECTNAME data from SOURCE via GCF',
+    description='Update the DABS data from SOURCE via GCF',
     author='UGRC',
     author_email='ugrc@utah.gov',
-    url='https://github.com/agrc/skid',
+    url='https://github.com/eneemann/dabs-skid',
     packages=find_packages('src'),
     package_dir={'': 'src'},
     py_modules=[splitext(basename(path))[0] for path in glob('src/*.py')],
@@ -34,12 +34,12 @@ setup(
         'Topic :: Utilities',
     ],
     project_urls={
-        'Issue Tracker': 'https://github.com/agrc/python/issues',
+        'Issue Tracker': 'https://github.com/eneemann/python/issues',
     },
     keywords=['gis'],
     install_requires=[
         'arcgis==2.0.*',
-        'ugrc-palletjack==2.2.*',
+        'ugrc-palletjack==2.6.*',
         'agrc-supervisor==3.0.*',
     ],
     extras_require={
@@ -60,6 +60,6 @@ setup(
         'pytest-runner',
     ],
     entry_points={'console_scripts': [
-        'skidname = skidname.main:main',
+        'dabs = dabs.main:main',
     ]},
 )
