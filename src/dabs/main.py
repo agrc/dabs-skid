@@ -221,6 +221,9 @@ def process():
         else:
             module_logger.info('No new rows to geocode ...')
             combined_dataframe = working_dataframe
+            
+        #: Strip all string fields of whitespace
+        combined_dataframe = combined_dataframe.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
         
         #: Backup data and overwrite existing feature service
