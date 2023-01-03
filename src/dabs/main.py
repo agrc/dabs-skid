@@ -148,13 +148,13 @@ def process():
         module_logger.info('Reading in DABS data from Google Sheet ...')
         loader = GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
         month_tab = time.strftime("%m/%Y")
-        # month_tab = '11/2022'
+        month_tab = '12/2022'
         dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f'{month_tab}', by_title=True)
         
         #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
-        adds_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'add']
+        adds_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'add'].copy()
         adds_df.drop(['ACTION'], axis='columns', inplace=True)
-        removes_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'remove']
+        removes_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'remove'].copy()
 
         #: OVERWRITE/TRUNCATE AND LOAD METHOD
         #: Pull down original data and copy to working dataframe
