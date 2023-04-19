@@ -148,7 +148,8 @@ def process():
         module_logger.info('Reading in DABS data from Google Sheet ...')
         loader = GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
         month_tab = time.strftime("%m/%Y")
-        month_tab = '12/2022'
+        # month_tab = '01/2023'
+        month_tab = 'erik_temp_20230418'
         dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f'{month_tab}', by_title=True)
         
         #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
@@ -181,7 +182,8 @@ def process():
         if len(adds_df.index) > 0:
             module_logger.info('Geocoding new rows ...')
             geocoder = APIGeocoder(secrets.GEOCODE_KEY)
-            geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
+            # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
+            geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'City', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
             valid = geo_df.spatial.validate()
             print(f'Is geo_df spatial?: {valid}')
             # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
