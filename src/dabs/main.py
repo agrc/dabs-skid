@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import arcgis
-from palletjack import (FeatureServiceInlineUpdater, FeatureServiceOverwriter,GSheetLoader)
+from palletjack import extract, load
 from palletjack.transform import APIGeocoder
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
@@ -117,6 +117,7 @@ def _remove_log_file_handlers(log_name, loggers):
             except Exception as error:
                 pass
 
+
 def process():
     """The main function that does all the work.
     """
@@ -146,11 +147,11 @@ def process():
 
         #: Read data from Google Sheet
         module_logger.info('Reading in DABS data from Google Sheet ...')
-        loader = GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
+        loader = extract.GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
         month_tab = time.strftime("%m/%Y")
         # month_tab = '05/2023'
         dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f'{month_tab}', by_title=True)
-        
+
         #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
         adds_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'add'].copy()
         adds_df.drop(['ACTION'], axis='columns', inplace=True)
@@ -167,7 +168,7 @@ def process():
         #: Convert to SEDF in 4326 spatial reference using lat/lon fields in the data
         module_logger.info('Converting data to SEDF in 4326 spatial reference ...')
         pd.DataFrame.spatial.from_xy(df=working_dataframe, x_column='Point_X', y_column='Point_Y', sr=4326)
-        
+
         #: Remove rows for licenses in removes_df
         before_count = len(working_dataframe.index)
         module_logger.info('Deleting removed rows from dataframe ...')
@@ -176,13 +177,15 @@ def process():
         after_count = len(working_dataframe.index)
         change = before_count - after_count
         module_logger.info(f'Removed {change} rows from working dataframe ...')
-        
+
         #: Geocode rows if ACTION.casefold() == 'add', else put them into the removes dataframe
         if len(adds_df.index) > 0:
             module_logger.info('Geocoding new rows ...')
             geocoder = APIGeocoder(secrets.GEOCODE_KEY)
             # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
-            geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'City', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
+            geo_df = geocoder.geocode_dataframe(
+                adds_df, 'Address', 'City', 4326, rate_limits=(0.015, 0.03), acceptScore=90
+            )
             valid = geo_df.spatial.validate()
             print(f'Is geo_df spatial?: {valid}')
             # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
@@ -216,23 +219,23 @@ def process():
             dupes = combined_dataframe[lic_nums.isin(lic_nums[lic_nums.duplicated()])].sort_values("Lic_Number")
             # module_logger.info(dupes.head(10))
             if len(dupes.index) > 0:
-                module_logger.info(f'Found {len(dupes.index)} duplicates in newly combined data, dropping all but last occurrences ...')
+                module_logger.info(
+                    f'Found {len(dupes.index)} duplicates in newly combined data, dropping all but last occurrences ...'
+                )
                 combined_dataframe.drop_duplicates('Lic_Number', keep='last', inplace=True)
                 module_logger.info(f'Combined dataframe now has {len(combined_dataframe.index)} rows ...')
         else:
             module_logger.info('No new rows to geocode ...')
             combined_dataframe = working_dataframe
-            
+
         #: Strip all string fields of whitespace
         combined_dataframe = combined_dataframe.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
-        
         #: Backup data and overwrite existing feature service
         fail_dir = r'C:\Temp'
-        overwriter = FeatureServiceOverwriter(gis)
-        overwriter.truncate_and_load_feature_service(config.FEATURE_LAYER_ITEMID, combined_dataframe, fail_dir, layer_index=0)
-           
-        
+        overwriter = load.FeatureServiceUpdater(gis, config.FEATURE_LAYER_ITEMID, fail_dir, layer_index=0)
+        overwriter.truncate_and_load_features(combined_dataframe, save_old=True)
+
         end = datetime.now()
 
         summary_message = MessageDetails()
@@ -256,8 +259,6 @@ def process():
         #: Remove file handler so the tempdir will close properly
         loggers = [logging.getLogger(config.SKID_NAME), logging.getLogger('palletjack')]
         _remove_log_file_handlers(log_name, loggers)
-
-
 
 
 def main(event, context):  # pylint: disable=unused-argument
@@ -288,6 +289,7 @@ def main(event, context):  # pylint: disable=unused-argument
 
     #: Call process() and any other functions you want to be run as part of the skid here.
     process()
+
 
 #: Putting this here means you can call the file via `python main.py` and it will run. Useful for pre-GCF testing.
 if __name__ == '__main__':
