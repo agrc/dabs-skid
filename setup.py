@@ -38,8 +38,8 @@ setup(
     },
     keywords=['gis'],
     install_requires=[
-        'ugrc-palletjack>=4.1,<4.4',
-        'agrc-supervisor==3.0.*',
+        'ugrc-palletjack>=4.1,<4.5',
+        'agrc-supervisor>=3.0,<3.2',
     ],
     extras_require={
         'tests': [
