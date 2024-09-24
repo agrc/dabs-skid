@@ -1,6 +1,7 @@
 [tool.ruff]
 line-length = 120
 lint.ignore = ["E501"]
+exclude=["docs"]
 [tool.black]
 line-length = 120
 [tool.pytest.ini_options]
