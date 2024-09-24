@@ -10,7 +10,7 @@ SKID_NAME = "DABS"
 AGOL_ORG = "https://utah.maps.arcgis.com"
 SENDGRID_SETTINGS = {  #: Settings for SendGridHandler
     "from_address": "noreply@utah.gov",
-    "to_addresses": ["jdadams@utah.gov", "rkelson@utah.gov"],
+    "to_addresses": "rkelson@utah.gov",
     "prefix": f"{SKID_NAME} on {socket.gethostname()}: ",
 }
 LOG_LEVEL = logging.DEBUG
