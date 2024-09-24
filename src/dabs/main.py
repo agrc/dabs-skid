@@ -6,12 +6,15 @@ Run the SKIDNAME script as a cloud function.
 import json
 import logging
 import sys
+
 from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import arcgis
+import numpy as np
+import pandas as pd
 from palletjack import extract, load
 from palletjack.transform import APIGeocoder
 from supervisor.message_handlers import SendGridHandler
@@ -140,13 +143,6 @@ def process():
         #: Get our GIS object via the ArcGIS API for Python
         gis = arcgis.gis.GIS(config.AGOL_ORG, secrets.AGOL_USER, secrets.AGOL_PASSWORD)
 
-        #########################################################################
-        #: Use the various palletjack classes and other code to do your work here
-        #########################################################################
-        import pandas as pd
-        import numpy as np
-        import time
-
         #: Read data from Google Sheet
         module_logger.info("Reading in DABS data from Google Sheet ...")
         loader = extract.GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
@@ -167,10 +163,6 @@ def process():
         original_dataframe = featureset.sdf
         working_dataframe = original_dataframe.copy()
 
-        #: Convert to SEDF in 4326 spatial reference using lat/lon fields in the data
-        module_logger.info("Converting data to SEDF in 4326 spatial reference ...")
-        pd.DataFrame.spatial.from_xy(df=working_dataframe, x_column="Point_X", y_column="Point_Y", sr=4326)
-
         #: Remove rows for licenses in removes_df
         before_count = len(working_dataframe.index)
         module_logger.info("Deleting removed rows from dataframe ...")
@@ -181,84 +173,18 @@ def process():
         module_logger.info(f"Removed {change} rows from working dataframe ...")
 
         #: Geocode rows if ACTION.casefold() == 'add', else put them into the removes dataframe
-        if len(adds_df.index) > 0:
-            module_logger.info("Geocoding new rows ...")
-            geocoder = APIGeocoder(secrets.GEOCODE_KEY)
-            geo_df = geocoder.geocode_dataframe(
-                adds_df,
-                "Address",
-                "Zip",
-                4326,
-                rate_limits=(0.015, 0.03),
-                acceptScore=90,
-            )
-            # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'City', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
-            valid = geo_df.spatial.validate()
-            print(f"Is geo_df spatial?: {valid}")
-            # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
-
-            #: Add rows to AGOL layer AS THEY COME FROM THE SHEET (include bad geocodes for now, then manually edit them)
-            # columns = ['Lic_Number', 'Name', 'Address', 'Lic_Address', 'City', 'Zip', 'SHAPE']
-            columns = [
-                "Rec_Number",
-                "Lic_Number",
-                "Name",
-                "Address",
-                "Lic_Address",
-                "City",
-                "Zip",
-                "SHAPE",
-            ]
-            geo_df_to_add = geo_df[columns]
-
-            #: Calculate appropriate OIDs on the geocoded dataframe (use original_dataframe to be safe)
-            # max_OID = original_dataframe['OBJECTID'].max()
-            # geo_df_to_add.insert(0, 'OBJECTID', range(max_OID + 1, max_OID + len(geo_df_to_add) + 1))
-
-            #: Combine working dataframe with geocoded dataframe
-            combined_dataframe = pd.concat([working_dataframe, geo_df_to_add])
-
-            #: Convert NaNs to 0s and make dtype 'int' on Comp_Zone
-            combined_dataframe["Comp_Zone"].fillna(0, inplace=True)
-            combined_dataframe["Comp_Zone"] = combined_dataframe["Comp_Zone"].astype("int")
-            # combined_dataframe['Comp_Zone'] = combined_dataframe['Comp_Zone'].astype('int64')
-
-            #: Convert NaNs to 0s for double fields (Point_X and Point_Y)
-            combined_dataframe["Point_X"].fillna(0, inplace=True)
-            combined_dataframe["Point_Y"].fillna(0, inplace=True)
-            combined_dataframe["Addr_Dist"].fillna(0, inplace=True)
-
-            #: drop ObjectID field- fixes weird empty string in int column error
-            combined_dataframe.drop(columns=["OBJECTID"], inplace=True)
-
-            #: Convert remaining NaNs to empty strings in string fields (County, Suite_Unit, Lic_Type, Lic_Descr, Renew_Date, Lic_Group, Comp_Group, Comp_Needed, Flag)
-            # combined_dataframe.to_csv(r"C:\DABC\_SkidLogs\problem.csv")
-            # print(combined_dataframe.info())
-            # print(combined_dataframe.isna().any(axis=1))
-            combined_dataframe = combined_dataframe.replace(np.nan, "", regex=True)
-
-            #: Deduplicate Rec_Number field
-            module_logger.info(f"Combined dataframe has {len(combined_dataframe.index)} rows ...")
-            lic_nums = combined_dataframe["Rec_Number"]
-            dupes = combined_dataframe[lic_nums.isin(lic_nums[lic_nums.duplicated()])].sort_values("Rec_Number")
-            # module_logger.info(dupes.head(10))
-            if len(dupes.index) > 0:
-                module_logger.info(
-                    f"Found {len(dupes.index)} duplicates in newly combined data, dropping all but last occurrences ..."
-                )
-                combined_dataframe.drop_duplicates("Rec_Number", keep="last", inplace=True)
-                module_logger.info(f"Combined dataframe now has {len(combined_dataframe.index)} rows ...")
-        else:
-            module_logger.info("No new rows to geocode ...")
-            combined_dataframe = working_dataframe
+        combined_dataframe = _geocode_new_records(secrets, adds_df, working_dataframe)
 
         #: Strip all string fields of whitespace
         combined_dataframe = combined_dataframe.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
+        #: Overwrite sr to make sure it is consistent and converts to geopandas df properly in palletjack load
+        combined_dataframe.spatial.sr = {"wkid": 26912}
+
         #: Backup data and overwrite existing feature service
         fail_dir = r"C:\Temp"
         overwriter = load.FeatureServiceUpdater(gis, config.FEATURE_LAYER_ITEMID, fail_dir, layer_index=0)
-        # overwriter.truncate_and_load_features(combined_dataframe, save_old=True)
+        overwriter.truncate_and_load_features(combined_dataframe, save_old=True)
 
         end = datetime.now()
 
@@ -271,18 +197,82 @@ def process():
             f'Start time: {start.strftime("%H:%M:%S")}',
             f'End time: {end.strftime("%H:%M:%S")}',
             f"Duration: {str(end-start)}",
-            #: Add other rows here containing summary info captured/calculated during the working portion of the skid,
-            #: like the number of rows updated or the number of successful attachment overwrites.
         ]
 
         summary_message.message = "\n".join(summary_rows)
         summary_message.attachments = tempdir_path / log_name
 
-        # skid_supervisor.notify(summary_message)
+        skid_supervisor.notify(summary_message)
 
         #: Remove file handler so the tempdir will close properly
         loggers = [logging.getLogger(config.SKID_NAME), logging.getLogger("palletjack")]
         _remove_log_file_handlers(log_name, loggers)
+
+
+def _geocode_new_records(secrets, adds_df, working_dataframe):
+
+    module_logger = logging.getLogger(config.SKID_NAME)
+
+    if len(adds_df.index) == 0:
+        module_logger.info("No new rows to geocode ...")
+        return working_dataframe
+
+    module_logger.info("Geocoding new rows ...")
+    geocoder = APIGeocoder(secrets.GEOCODE_KEY)
+    geocoded_adds = geocoder.geocode_dataframe(
+        adds_df,
+        "Address",
+        "Zip",
+        26912,
+        rate_limits=(0.015, 0.03),
+        acceptScore=90,
+    )
+
+    valid = geocoded_adds.spatial.validate()
+    print(f"Is geocoded_adds spatial?: {valid}")
+
+    #: Add rows to AGOL layer AS THEY COME FROM THE SHEET (include bad geocodes for now, then manually edit them)
+    columns = [
+        "Rec_Number",
+        "Lic_Number",
+        "Name",
+        "Address",
+        "Lic_Address",
+        "City",
+        "Zip",
+        "SHAPE",
+    ]
+    geocoded_df_to_add = geocoded_adds.reindex(columns=columns)
+
+    #: Combine working dataframe with geocoded dataframe
+    combined_dataframe = pd.concat([working_dataframe, geocoded_df_to_add])
+
+    #: Convert NaNs to 0s and make dtype 'int' on Comp_Zone
+    combined_dataframe["Comp_Zone"].fillna(0, inplace=True)
+    combined_dataframe["Comp_Zone"] = combined_dataframe["Comp_Zone"].astype("int")
+
+    #: Convert NaNs to 0s for double fields (Point_X and Point_Y)
+    combined_dataframe["Point_X"].fillna(0, inplace=True)
+    combined_dataframe["Point_Y"].fillna(0, inplace=True)
+    combined_dataframe["Addr_Dist"].fillna(0, inplace=True)
+
+    #: drop ObjectID field- fixes weird empty string in int column error
+    combined_dataframe.drop(columns=["OBJECTID"], inplace=True)
+
+    #: Convert remaining NaNs to empty strings in string fields (County, Suite_Unit, Lic_Type, Lic_Descr, Renew_Date, Lic_Group, Comp_Group, Comp_Needed, Flag)
+    combined_dataframe = combined_dataframe.replace(np.nan, "", regex=True)
+
+    #: Deduplicate Rec_Number field
+    module_logger.info(f"Combined dataframe has {len(combined_dataframe.index)} rows ...")
+    number_of_dupes = combined_dataframe.duplicated("Rec_Number").sum()
+    if number_of_dupes > 0:
+        module_logger.info(
+            f"Found {number_of_dupes} duplicates in newly combined data, dropping all but last occurrences ..."
+        )
+        combined_dataframe.drop_duplicates("Rec_Number", keep="last", inplace=True)
+        module_logger.info(f"Combined dataframe now has {len(combined_dataframe.index)} rows ...")
+
+    return combined_dataframe
 
 
 def main(event, context):  # pylint: disable=unused-argument
