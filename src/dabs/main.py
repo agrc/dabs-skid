@@ -120,7 +120,7 @@ def _remove_log_file_handlers(log_name, loggers):
                 if log_name in handler.stream.name:
                     logger.removeHandler(handler)
                     handler.close()
-            except Exception as error:
+            except Exception:
                 pass
 
 
