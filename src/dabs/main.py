@@ -36,18 +36,18 @@ def _get_secrets():
         dict: The secrets .json loaded as a dictionary
     """
 
-    secret_folder = Path('/secrets')
+    secret_folder = Path("/secrets")
 
     #: Try to get the secrets from the Cloud Function mount point
     if secret_folder.exists():
-        return json.loads(Path('/secrets/app/secrets.json').read_text(encoding='utf-8'))
+        return json.loads(Path("/secrets/app/secrets.json").read_text(encoding="utf-8"))
 
     #: Otherwise, try to load a local copy for local development
-    secret_folder = (Path(__file__).parent / 'secrets')
+    secret_folder = Path(__file__).parent / "secrets"
     if secret_folder.exists():
-        return json.loads((secret_folder / 'secrets.json').read_text(encoding='utf-8'))
+        return json.loads((secret_folder / "secrets.json").read_text(encoding="utf-8"))
 
-    raise FileNotFoundError('Secrets folder not found; secrets not loaded.')
+    raise FileNotFoundError("Secrets folder not found; secrets not loaded.")
 
 
 def _initialize(log_path, sendgrid_api_key):
@@ -63,17 +63,18 @@ def _initialize(log_path, sendgrid_api_key):
 
     skid_logger = logging.getLogger(config.SKID_NAME)
     skid_logger.setLevel(config.LOG_LEVEL)
-    palletjack_logger = logging.getLogger('palletjack')
+    palletjack_logger = logging.getLogger("palletjack")
     palletjack_logger.setLevel(config.LOG_LEVEL)
 
     cli_handler = logging.StreamHandler(sys.stdout)
     cli_handler.setLevel(config.LOG_LEVEL)
     formatter = logging.Formatter(
-        fmt='%(levelname)-7s %(asctime)s %(name)15s:%(lineno)5s %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
+        fmt="%(levelname)-7s %(asctime)s %(name)15s:%(lineno)5s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
     cli_handler.setFormatter(formatter)
 
-    log_handler = logging.FileHandler(log_path, mode='w')
+    log_handler = logging.FileHandler(log_path, mode="w")
     log_handler.setLevel(config.LOG_LEVEL)
     log_handler.setFormatter(formatter)
 
@@ -87,13 +88,15 @@ def _initialize(log_path, sendgrid_api_key):
     #: (all log messages were duplicated if put at beginning)
     logging.captureWarnings(True)
 
-    skid_logger.debug('Creating Supervisor object')
+    skid_logger.debug("Creating Supervisor object")
     skid_supervisor = Supervisor(handle_errors=False)
     sendgrid_settings = config.SENDGRID_SETTINGS
-    sendgrid_settings['api_key'] = sendgrid_api_key
+    sendgrid_settings["api_key"] = sendgrid_api_key
     skid_supervisor.add_message_handler(
         SendGridHandler(
-            sendgrid_settings=sendgrid_settings, client_name=config.SKID_NAME, client_version=version.__version__
+            sendgrid_settings=sendgrid_settings,
+            client_name=config.SKID_NAME,
+            client_version=version.__version__,
         )
     )
 
@@ -119,8 +122,7 @@ def _remove_log_file_handlers(log_name, loggers):
 
 
 def process():
-    """The main function that does all the work.
-    """
+    """The main function that does all the work."""
 
     #: Set up secrets, tempdir, supervisor, and logging
     start = datetime.now()
@@ -146,16 +148,16 @@ def process():
         import time
 
         #: Read data from Google Sheet
-        module_logger.info('Reading in DABS data from Google Sheet ...')
+        module_logger.info("Reading in DABS data from Google Sheet ...")
         loader = extract.GSheetLoader(secrets.SERVICE_ACCOUNT_JSON)
-        month_tab = time.strftime("%m/%Y")
-        # month_tab = '05/2023'
-        dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f'{month_tab}', by_title=True)
+        # month_tab = time.strftime("%m/%Y")
+        month_tab = "02/2024"
+        dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f"{month_tab}", by_title=True)
 
         #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
-        adds_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'add'].copy()
-        adds_df.drop(['ACTION'], axis='columns', inplace=True)
-        removes_df = dabs_df[dabs_df['ACTION'].str.casefold() == 'remove'].copy()
+        adds_df = dabs_df[dabs_df["ACTION"].str.casefold() == "add"].copy()
+        adds_df.drop(["ACTION"], axis="columns", inplace=True)
+        removes_df = dabs_df[dabs_df["ACTION"].str.casefold() == "remove"].copy()
 
         #: OVERWRITE/TRUNCATE AND LOAD METHOD
         #: Pull down original data and copy to working dataframe
@@ -166,32 +168,47 @@ def process():
         working_dataframe = original_dataframe.copy()
 
         #: Convert to SEDF in 4326 spatial reference using lat/lon fields in the data
-        module_logger.info('Converting data to SEDF in 4326 spatial reference ...')
-        pd.DataFrame.spatial.from_xy(df=working_dataframe, x_column='Point_X', y_column='Point_Y', sr=4326)
+        module_logger.info("Converting data to SEDF in 4326 spatial reference ...")
+        pd.DataFrame.spatial.from_xy(df=working_dataframe, x_column="Point_X", y_column="Point_Y", sr=4326)
 
         #: Remove rows for licenses in removes_df
         before_count = len(working_dataframe.index)
-        module_logger.info('Deleting removed rows from dataframe ...')
-        remove_licenses = removes_df['Lic_Number'].tolist()
-        working_dataframe = working_dataframe[~working_dataframe['Lic_Number'].isin(remove_licenses)]
+        module_logger.info("Deleting removed rows from dataframe ...")
+        remove_licenses = removes_df["Rec_Number"].tolist()
+        working_dataframe = working_dataframe[~working_dataframe["Rec_Number"].isin(remove_licenses)]
         after_count = len(working_dataframe.index)
         change = before_count - after_count
-        module_logger.info(f'Removed {change} rows from working dataframe ...')
+        module_logger.info(f"Removed {change} rows from working dataframe ...")
 
         #: Geocode rows if ACTION.casefold() == 'add', else put them into the removes dataframe
         if len(adds_df.index) > 0:
-            module_logger.info('Geocoding new rows ...')
+            module_logger.info("Geocoding new rows ...")
             geocoder = APIGeocoder(secrets.GEOCODE_KEY)
-            # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
             geo_df = geocoder.geocode_dataframe(
-                adds_df, 'Address', 'City', 4326, rate_limits=(0.015, 0.03), acceptScore=90
+                adds_df,
+                "Address",
+                "Zip",
+                4326,
+                rate_limits=(0.015, 0.03),
+                acceptScore=90,
             )
+            # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'City', 4326, rate_limits=(0.015, 0.03), acceptScore=90)
             valid = geo_df.spatial.validate()
-            print(f'Is geo_df spatial?: {valid}')
+            print(f"Is geo_df spatial?: {valid}")
             # geo_df = geocoder.geocode_dataframe(adds_df, 'Address', 'Zip', 3857, rate_limits=(0.015, 0.03), **{"acceptScore": 90})
 
-            #: Add rows to AGOL layer (include bad geocodes for now, then manually edit them)
-            columns = ['Lic_Number', 'Name', 'Address', 'Lic_Address', 'City', 'Zip', 'SHAPE']
+            #: Add rows to AGOL layer AS THEY COME FROM THE SHEET (include bad geocodes for now, then manually edit them)
+            # columns = ['Lic_Number', 'Name', 'Address', 'Lic_Address', 'City', 'Zip', 'SHAPE']
+            columns = [
+                "Rec_Number",
+                "Lic_Number",
+                "Name",
+                "Address",
+                "Lic_Address",
+                "City",
+                "Zip",
+                "SHAPE",
+            ]
             geo_df_to_add = geo_df[columns]
 
             #: Calculate appropriate OIDs on the geocoded dataframe (use original_dataframe to be safe)
@@ -202,62 +219,69 @@ def process():
             combined_dataframe = pd.concat([working_dataframe, geo_df_to_add])
 
             #: Convert NaNs to 0s and make dtype 'int' on Comp_Zone
-            combined_dataframe['Comp_Zone'].fillna(0, inplace=True)
-            combined_dataframe['Comp_Zone'] = combined_dataframe['Comp_Zone'].astype('int')
+            combined_dataframe["Comp_Zone"].fillna(0, inplace=True)
+            combined_dataframe["Comp_Zone"] = combined_dataframe["Comp_Zone"].astype("int")
+            # combined_dataframe['Comp_Zone'] = combined_dataframe['Comp_Zone'].astype('int64')
 
             #: Convert NaNs to 0s for double fields (Point_X and Point_Y)
-            combined_dataframe['Point_X'].fillna(0, inplace=True)
-            combined_dataframe['Point_Y'].fillna(0, inplace=True)
-            combined_dataframe['Addr_Dist'].fillna(0, inplace=True)
+            combined_dataframe["Point_X"].fillna(0, inplace=True)
+            combined_dataframe["Point_Y"].fillna(0, inplace=True)
+            combined_dataframe["Addr_Dist"].fillna(0, inplace=True)
+
+            #: drop ObjectID field- fixes weird empty string in int column error
+            combined_dataframe.drop(columns=["OBJECTID"], inplace=True)
 
             #: Convert remaining NaNs to empty strings in string fields (County, Suite_Unit, Lic_Type, Lic_Descr, Renew_Date, Lic_Group, Comp_Group, Comp_Needed, Flag)
-            combined_dataframe = combined_dataframe.replace(np.nan, '', regex=True)
+            # combined_dataframe.to_csv(r"C:\DABC\_SkidLogs\problem.csv")
+            # print(combined_dataframe.info())
+            # print(combined_dataframe.isna().any(axis=1))
+            combined_dataframe = combined_dataframe.replace(np.nan, "", regex=True)
 
-            #: Deduplicate Lic_Number field
-            module_logger.info(f'Combined dataframe has {len(combined_dataframe.index)} rows ...')
-            lic_nums = combined_dataframe['Lic_Number']
-            dupes = combined_dataframe[lic_nums.isin(lic_nums[lic_nums.duplicated()])].sort_values("Lic_Number")
+            #: Deduplicate Rec_Number field
+            module_logger.info(f"Combined dataframe has {len(combined_dataframe.index)} rows ...")
+            lic_nums = combined_dataframe["Rec_Number"]
+            dupes = combined_dataframe[lic_nums.isin(lic_nums[lic_nums.duplicated()])].sort_values("Rec_Number")
             # module_logger.info(dupes.head(10))
             if len(dupes.index) > 0:
                 module_logger.info(
-                    f'Found {len(dupes.index)} duplicates in newly combined data, dropping all but last occurrences ...'
+                    f"Found {len(dupes.index)} duplicates in newly combined data, dropping all but last occurrences ..."
                 )
-                combined_dataframe.drop_duplicates('Lic_Number', keep='last', inplace=True)
-                module_logger.info(f'Combined dataframe now has {len(combined_dataframe.index)} rows ...')
+                combined_dataframe.drop_duplicates("Rec_Number", keep="last", inplace=True)
+                module_logger.info(f"Combined dataframe now has {len(combined_dataframe.index)} rows ...")
         else:
-            module_logger.info('No new rows to geocode ...')
+            module_logger.info("No new rows to geocode ...")
             combined_dataframe = working_dataframe
 
         #: Strip all string fields of whitespace
         combined_dataframe = combined_dataframe.applymap(lambda x: x.strip() if isinstance(x, str) else x)
 
         #: Backup data and overwrite existing feature service
-        fail_dir = r'C:\Temp'
+        fail_dir = r"C:\Temp"
         overwriter = load.FeatureServiceUpdater(gis, config.FEATURE_LAYER_ITEMID, fail_dir, layer_index=0)
-        overwriter.truncate_and_load_features(combined_dataframe, save_old=True)
+        # overwriter.truncate_and_load_features(combined_dataframe, save_old=True)
 
         end = datetime.now()
 
         summary_message = MessageDetails()
-        summary_message.subject = f'{config.SKID_NAME} Update Summary'
+        summary_message.subject = f"{config.SKID_NAME} Update Summary"
         summary_rows = [
             f'{config.SKID_NAME} update {start.strftime("%Y-%m-%d")}',
-            '=' * 20,
-            '',
+            "=" * 20,
+            "",
             f'Start time: {start.strftime("%H:%M:%S")}',
             f'End time: {end.strftime("%H:%M:%S")}',
-            f'Duration: {str(end-start)}',
+            f"Duration: {str(end-start)}",
             #: Add other rows here containing summary info captured/calculated during the working portion of the skid,
             #: like the number of rows updated or the number of successful attachment overwrites.
         ]
 
-        summary_message.message = '\n'.join(summary_rows)
+        summary_message.message = "\n".join(summary_rows)
         summary_message.attachments = tempdir_path / log_name
 
         # skid_supervisor.notify(summary_message)
 
         #: Remove file handler so the tempdir will close properly
-        loggers = [logging.getLogger(config.SKID_NAME), logging.getLogger('palletjack')]
+        loggers = [logging.getLogger(config.SKID_NAME), logging.getLogger("palletjack")]
         _remove_log_file_handlers(log_name, loggers)
 
 
@@ -292,5 +316,5 @@ def main(event, context):  # pylint: disable=unused-argument
 
 
 #: Putting this here means you can call the file via `python main.py` and it will run. Useful for pre-GCF testing.
-if __name__ == '__main__':
+if __name__ == "__main__":
     process()
