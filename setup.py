@@ -58,7 +58,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "dabs = dabs.main:main",
+            "dabs = dabs.main:process",
         ]
     },
 )
