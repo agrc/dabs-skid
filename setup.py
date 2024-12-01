@@ -48,7 +48,7 @@ setup(
             "pytest-mock==3.*",
             "pytest-watch==4.*",
             "pytest>=6,<9",
-            "black>=24.4.2,<24.5",
+            "black>=24.4.2,<24.11",
             "ruff==0.*",
             "functions-framework>=3.8.0,<3.9",
         ]
