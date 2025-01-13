@@ -21,7 +21,7 @@ setup(
     description="Update the DABS data from SOURCE via GCF",
     author="UGRC",
     author_email="ugrc@utah.gov",
-    url="https://github.com/eneemann/dabs-skid",
+    url="https://github.com/agrc/dabs-skid",
     packages=find_packages("src"),
     package_dir={"": "src"},
     py_modules=[splitext(basename(path))[0] for path in glob("src/*.py")],
@@ -34,7 +34,7 @@ setup(
         "Topic :: Utilities",
     ],
     project_urls={
-        "Issue Tracker": "https://github.com/eneemann/python/issues",
+        "Issue Tracker": "https://github.com/agrc/dabs-skid/issues",
     },
     keywords=["gis"],
     install_requires=[
