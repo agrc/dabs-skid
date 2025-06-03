@@ -183,9 +183,9 @@ def process():
         combined_dataframe.spatial.sr = {"wkid": 26912}
 
         #: Backup data and overwrite existing feature service
-        fail_dir = r"C:\Temp"
-        overwriter = load.FeatureServiceUpdater(gis, config.FEATURE_LAYER_ITEMID, fail_dir, layer_index=0)
-        overwriter.truncate_and_load_features(combined_dataframe, save_old=True)
+        fail_dir = Path("C:/Temp")
+        overwriter = load.ServiceUpdater(gis, config.FEATURE_LAYER_ITEMID, index=0, working_dir=fail_dir)
+        overwriter.truncate_and_load(combined_dataframe, save_old=True)
 
         end = datetime.now()
 
