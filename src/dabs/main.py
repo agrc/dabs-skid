@@ -21,13 +21,7 @@ from palletjack.transform import APIGeocoder
 from supervisor.message_handlers import SendGridHandler
 from supervisor.models import MessageDetails, Supervisor
 
-#: This makes it work when calling with just `python <file>`/installing via pip and in the gcf framework, where
-#: the relative imports fail because of how it's calling the function.
-try:
-    from . import config, version
-except ImportError:
-    import config
-    import version
+from . import config, version
 
 
 def _get_secrets():
@@ -111,7 +105,7 @@ def _remove_log_file_handlers(log_name, loggers):
     """A helper function to remove the file handlers so the tempdir will close correctly
 
     Args:
-        log_name (str): The logfiles filename
+        log_name (str): The log files filename
         loggers (List<str>): The loggers that are writing to log_name
     """
 
@@ -151,7 +145,7 @@ def process():
         month_tab = "01/2025"
         dabs_df = loader.load_specific_worksheet_into_dataframe(secrets.SHEET_ID, f"{month_tab}", by_title=True)
 
-        #: Seperate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
+        #: Separate rows to geocode if ACTION.casefold() == 'add', else put them into the removes dataframe
         adds_df = dabs_df[dabs_df["ACTION"].str.casefold() == "add"].copy()
         adds_df.drop(["ACTION"], axis="columns", inplace=True)
         removes_df = dabs_df[dabs_df["ACTION"].str.casefold() == "remove"].copy()
