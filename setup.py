@@ -4,6 +4,7 @@
 setup.py
 A module that installs the SKIDNAME skid as a module
 """
+
 from glob import glob
 from os.path import basename, splitext
 
